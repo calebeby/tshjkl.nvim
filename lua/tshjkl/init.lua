@@ -110,6 +110,10 @@ local function select_position(pos)
   if pos.stop.col > 0 then
     keys = keys .. 'v' .. pos.stop.row + 1 .. 'G0'
     keys = keys .. pos.stop.col - 1 .. 'l'
+
+    if vim.o.selection == 'exclusive' then
+      keys = keys .. 'l'
+    end
   else
     keys = keys .. 'v' .. pos.stop.row .. 'G$'
   end
