@@ -311,6 +311,23 @@ local function swap_nodes(current_node, target_node)
     local start_row, start_col = pos.start.row, pos.start.col
     local stop_row, stop_col = pos.stop.row, pos.stop.col
 
+    -- buf_get_lines is end-row _exclusive_ (unlike buf_get_text) so we +1
+    local lines_full =
+      vim.api.nvim_buf_get_lines(0, start_row, stop_row + 1, false)
+    local stop_line = lines_full[#lines_full]
+    local stop_len = stop_line and #stop_line or 0
+    -- Bug where if the end of the node is the end of the buffer (no trailing newline)
+    -- we get an out of range error
+    if #lines_full < stop_row - start_row + 1 then
+      stop_row = stop_row - 1
+      stop_col = stop_len
+    end
+
+    print(stop_line, stop_len)
+    if stop_col > stop_len then
+      stop_col = stop_len
+    end
+
     local lines =
       vim.api.nvim_buf_get_text(0, start_row, start_col, stop_row, stop_col, {})
 
