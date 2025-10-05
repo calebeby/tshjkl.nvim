@@ -16,6 +16,32 @@ local M = {}
 ---@field move_outermost fun(): TSNode | nil
 ---@field set_current_node fun(tsnode: TSNode) : nil
 
+---@param node TSNode
+-- This is for automatically expanding the initial selection to the largest node on a line or lines
+-- So when you start the mode, it selects the "line node" or whatever the closest equivalent to that is.
+-- That is more convenient than selecting the smallest node that the cursor is on.
+function find_largest_ancestor_on_same_lines(start_node)
+  local node = start_node
+  local start_row, start_col, stop_row, stop_col = node:range()
+
+  while node do
+    local _node = node:parent()
+    if _node == nil then
+      return node
+    end
+    local _start_row, _start_col, _stop_row, _stop_col = _node:range()
+    if _stop_col == 0 then
+      _stop_row = _stop_row - 1
+    end
+
+    if _start_row < start_row or _stop_row > stop_row then
+      -- We expanded too far (we expanded to another line or lines), so stop here
+      return node
+    end
+    node = _node
+  end
+end
+
 ---@return Trail | nil
 function M.start()
   local ok, start_node =
@@ -27,7 +53,7 @@ function M.start()
   end
 
   ---@type Node
-  local current = { node = start_node }
+  local current = { node = find_largest_ancestor_on_same_lines(start_node) }
 
   ---@return TSNode | nil
   local function from_child_to_parent()

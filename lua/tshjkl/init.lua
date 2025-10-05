@@ -305,8 +305,8 @@ local function swap_nodes(current_node, target_node)
     )
   end
 
-  -- @param pos NodePosition
-  -- @return NodePosition
+  ---@param pos NodePosition
+  ---@return NodePosition
   local function trim_node_position(pos)
     local start_row, start_col = pos.start.row, pos.start.col
     local stop_row, stop_col = pos.stop.row, pos.stop.col
