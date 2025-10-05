@@ -40,6 +40,10 @@ local default_config = {
     next = 'j',
     prev = 'k',
     child = 'l',
+    swap_next = 'J',
+    swap_prev = 'K',
+    first_sibling = 'gg',
+    last_sibling = 'G',
     toggle_named = '<S-M-n>', -- named mode skips unnamed nodes
   },
   marks = {
@@ -278,6 +282,152 @@ local function set_current_node(node)
   end
 end
 
+---@param current_node TSNode | nil
+---@param target_node TSNode | nil
+---@return TSNode | nil
+local function swap_nodes(current_node, target_node)
+  if current_node == nil or target_node == nil then
+    return
+  end
+
+  local function posnum(p)
+    return p.row * 1e6 + p.col
+  end
+
+  local function put_text(pos, txt)
+    vim.api.nvim_buf_set_text(
+      0,
+      pos.start.row,
+      pos.start.col,
+      pos.stop.row,
+      pos.stop.col,
+      txt
+    )
+  end
+
+  -- @param pos NodePosition
+  -- @return NodePosition
+  local function trim_node_position(pos)
+    local start_row, start_col = pos.start.row, pos.start.col
+    local stop_row, stop_col = pos.stop.row, pos.stop.col
+
+    local lines =
+      vim.api.nvim_buf_get_text(0, start_row, start_col, stop_row, stop_col, {})
+
+    -- trim leading whitespace
+    while #lines > 0 do
+      local first = lines[1] -- this fragment starts at (start_row, start_col) for the first line
+      local fn = first:find('%S') -- first non-space (1-based in fragment)
+      if fn then
+        start_col = start_col + (fn - 1) -- adjust absolute col
+        break
+      end
+      -- the selected part of this first line is all whitespace -> drop the whole line
+      table.remove(lines, 1)
+      start_row = start_row + 1
+      start_col = 0
+    end
+    if #lines == 0 then
+      return nil
+    end
+
+    -- trim trailing whitespace
+    while #lines > 0 do
+      local last = lines[#lines] -- this fragment ends at (stop_row, stop_col) for the last line
+      local ln = last:match('.*()%S') -- position (1-based) of last non-space in the fragment
+      if ln then
+        if #lines == 1 then
+          stop_col = start_col + ln
+        else
+          stop_col = ln
+        end
+        break
+      end
+      -- selected part of the last line is all whitespace -> drop it
+      table.remove(lines) -- remove last
+      stop_row = stop_row - 1
+      if #lines == 0 then
+        return nil
+      end
+      -- new last line: selection for it now extends to its full length
+      stop_col = #lines[#lines]
+    end
+
+    return {
+      start = { row = start_row, col = start_col },
+      stop = { row = stop_row, col = stop_col },
+    }
+  end
+
+  local a_pos = trim_node_position(node_position(current_node))
+  local b_pos = trim_node_position(node_position(target_node))
+
+  -- fetch texts (tables of lines)
+  local a_text = vim.api.nvim_buf_get_text(
+    0,
+    a_pos.start.row,
+    a_pos.start.col,
+    a_pos.stop.row,
+    a_pos.stop.col,
+    {}
+  )
+  local b_text = vim.api.nvim_buf_get_text(
+    0,
+    b_pos.start.row,
+    b_pos.start.col,
+    b_pos.stop.row,
+    b_pos.stop.col,
+    {}
+  )
+
+  -- swap: replace later range first to avoid shifting earlier coordinates
+  if posnum(a_pos.start) > posnum(b_pos.start) then
+    put_text(a_pos, b_text)
+    put_text(b_pos, a_text)
+  else
+    put_text(b_pos, a_text)
+    put_text(a_pos, b_text)
+  end
+
+  -- compute where "current_node" (a) actually ended up
+  local result_start_row, result_start_col, result_end_row, result_end_col
+  if posnum(a_pos.start) < posnum(b_pos.start) then
+    -- If a was before b: its final start is `b.start.row + (lenB - lenA)`
+    result_start_row = b_pos.start.row + (#b_text - #a_text)
+    result_start_col = b_pos.start.col
+  else
+    -- If a was after b: its final start is `b.start.row` (no further shift)
+    result_start_row = b_pos.start.row
+    result_start_col = b_pos.start.col
+  end
+
+  if #a_text == 0 then
+    result_end_row = result_start_row
+    result_end_col = result_start_col
+  else
+    if #a_text == 1 then
+      result_end_row = result_start_row
+      result_end_col = result_start_col + #a_text[1]
+    else
+      result_end_row = result_start_row + (#a_text - 1)
+      result_end_col = #a_text[#a_text]
+    end
+  end
+
+  -- Reparse and find the updated node that spans that range
+  local parser = vim.treesitter.get_parser(bufnr)
+  local tree = parser:parse()[1]
+  local root = tree:root()
+  local new_node = root:descendant_for_range(
+    result_start_row,
+    result_start_col,
+    result_end_row,
+    result_end_col
+  )
+
+  return new_node
+end
+
 M.keys = {}
 
 local function unkeybind()
@@ -328,6 +478,24 @@ local function keybind(t, binds)
 
   local function prev()
     set_current_node(t.from_sib_to_sib(nav.op.prev))
+  end
+
+  local function swap_next()
+    local new_node = swap_nodes(t.current(), t.from_sib_to_sib(nav.op.next))
+    if new_node == nil then
+      return
+    end
+    t.set_current_node(new_node)
+    set_current_node(new_node)
+  end
+
+  local function swap_prev()
+    local new_node = swap_nodes(t.current(), t.from_sib_to_sib(nav.op.prev))
+    if new_node == nil then
+      return
+    end
+    t.set_current_node(new_node)
+    set_current_node(new_node)
   end
 
   local function parent()
@@ -447,6 +615,8 @@ local function keybind(t, binds)
   end)
   bind(M.opts.keymaps.next, next)
   bind(M.opts.keymaps.prev, prev)
+  bind(M.opts.keymaps.swap_next, swap_next)
+  bind(M.opts.keymaps.swap_prev, swap_prev)
   bind(M.opts.keymaps.parent, parent)
   bind(M.opts.keymaps.child, child)
   bind('H', outermost)
@@ -457,8 +627,8 @@ local function keybind(t, binds)
   bind('i', prepend)
   bind('o', open_below)
   bind('<S-o>', open_above)
-  bind('<S-j>', last_sibling)
-  bind('<S-k>', first_sibling)
+  bind(M.opts.keymaps.last_sibling, last_sibling)
+  bind(M.opts.keymaps.first_sibling, first_sibling)
   bind(M.opts.keymaps.toggle_named, toggle_named)
 
   local binds_api = {
