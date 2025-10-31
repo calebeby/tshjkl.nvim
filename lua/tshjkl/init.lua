@@ -123,7 +123,7 @@ local function select_position(pos)
   end
 
   vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes('<Esc>' .. keys, true, false, true),
+    vim.api.nvim_replace_termcodes('<Esc>' .. keys .. 'ozz', true, false, true),
     'n',
     true
   )
