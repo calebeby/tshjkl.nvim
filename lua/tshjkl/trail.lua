@@ -76,6 +76,28 @@ function M.start()
   end
 
   ---@return TSNode | nil
+  local function from_child_to_linewise_ancestor()
+    -- Like from_child_to_parent but when expanding,
+    -- chooses the largest node with the same range of lines as the parent
+    local parent = find_largest_ancestor_on_same_lines(nav.parent(current.node))
+    if parent == nil then
+      return
+    end
+
+    if current.parent == nil or current.parent.node ~= start_node then
+      current.parent = {
+        node = parent,
+        child = current,
+      }
+    end
+
+    current = current.parent
+    ---@cast current -nil
+
+    return current.node
+  end
+
+  ---@return TSNode | nil
   local function from_parent_to_child()
     if current.child == nil then
       local child = nav.child(current.node)
@@ -94,6 +116,57 @@ function M.start()
     ---@cast current -nil
 
     return current.node
+  end
+
+  local function has_smaller_range_of_lines(inner_node, outer_node)
+    print(vim.inspect(inner_node))
+    local start_row_inner, start_col_inner, stop_row_inner, stop_col_inner =
+      inner_node:range()
+    local start_row_outer, start_col_outer, stop_row_outer, stop_col_outer =
+      outer_node:range()
+    return start_row_inner > start_row_outer and stop_row_inner < stop_row_outer
+  end
+
+  local function find_linewise_descendant()
+    local to_scan = { current.node }
+    if current.child then
+      table.insert(to_scan, 1, current.child.node)
+    end
+
+    while #to_scan > 0 do
+      local node = table.remove(to_scan, 1)
+      if has_smaller_range_of_lines(node, current.node) then
+        return node
+      end
+
+      local child = nav.child(node)
+      while child do
+        table.insert(to_scan, child)
+        child = nav.sibling(child, nav.op.next)
+      end
+    end
+  end
+
+  ---@return TSNode | nil
+  local function from_parent_to_linewise_descendant()
+    -- Like from_parent_to_child but when finding the child,
+    -- chooses the largest node with a smaller range of lines than the parent
+    -- (i.e. it must choose a node with a smaller line range)
+
+    -- If no descendants have a smaller range of lines
+    -- (for example if the parent is only one line long),
+    -- falls back to from_parent_to_child behavior
+
+    local child = find_linewise_descendant()
+
+    if child then
+      current.child = {
+        node = child,
+        parent = current,
+      }
+    end
+
+    return from_parent_to_child()
   end
 
   ---@param op Op
@@ -138,6 +211,8 @@ function M.start()
 
   return {
     from_child_to_parent = from_child_to_parent,
+    from_child_to_linewise_ancestor = from_child_to_linewise_ancestor,
+    from_parent_to_linewise_descendant = from_parent_to_linewise_descendant,
     from_parent_to_child = from_parent_to_child,
     from_sib_to_sib = from_sib_to_sib,
     current = function()

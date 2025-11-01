@@ -37,6 +37,8 @@ local default_config = {
 
     -- these are only bound when we're toggled on on
     parent = 'h',
+    linewise_ancestor = 'H',
+    linewise_descendant = 'L',
     next = 'j',
     prev = 'k',
     child = 'l',
@@ -123,7 +125,7 @@ local function select_position(pos)
   end
 
   vim.api.nvim_feedkeys(
-    vim.api.nvim_replace_termcodes('<Esc>' .. keys .. 'ozz', true, false, true),
+    vim.api.nvim_replace_termcodes('<Esc>' .. keys .. 'o', true, false, true),
     'n',
     true
   )
@@ -323,7 +325,6 @@ local function swap_nodes(current_node, target_node)
       stop_col = stop_len
     end
 
-    print(stop_line, stop_len)
     if stop_col > stop_len then
       stop_col = stop_len
     end
@@ -519,6 +520,14 @@ local function keybind(t, binds)
     set_current_node(t.from_child_to_parent())
   end
 
+  local function linewise_ancestor()
+    set_current_node(t.from_child_to_linewise_ancestor())
+  end
+
+  local function linewise_descendant()
+    set_current_node(t.from_parent_to_linewise_descendant())
+  end
+
   local function pos_is_end_of_line(pos)
     local line = vim.api.nvim_buf_get_lines(0, pos.row, pos.row + 1, false)
     return pos.col == #line
@@ -635,9 +644,11 @@ local function keybind(t, binds)
   bind(M.opts.keymaps.swap_next, swap_next)
   bind(M.opts.keymaps.swap_prev, swap_prev)
   bind(M.opts.keymaps.parent, parent)
+  bind(M.opts.keymaps.linewise_ancestor, linewise_ancestor)
+  bind(M.opts.keymaps.linewise_descendant, linewise_descendant)
   bind(M.opts.keymaps.child, child)
-  bind('H', outermost)
-  bind('L', innermost)
+  -- bind('H', outermost)
+  -- bind('L', innermost)
   bind('b', visual_select_back)
   bind('v', M.opts.select_current_node and nodewise_visual or visual_select)
   bind('a', append) -- I don't think these work with select_current_node

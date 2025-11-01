@@ -128,8 +128,16 @@ local function parent_same_tree(node)
   end
 end
 
----@param node TSNode
-function M.parent(node)
+local function same_range(node_a, node_b)
+  local start_row_a, start_col_a, stop_row_a, stop_col_a = node_a:range()
+  local start_row_b, start_col_b, stop_row_b, stop_col_b = node_b:range()
+  return start_row_a == start_row_b
+    and start_col_a == start_col_b
+    and stop_row_a == stop_row_b
+    and stop_col_a == stop_col_b
+end
+
+function parent_across_trees(node)
   local tree_parent = parent_same_tree(node)
 
   if tree_parent then
@@ -141,6 +149,38 @@ function M.parent(node)
   if top_level and top_level:tree() ~= node:tree() then
     return top_level
   end
+end
+
+-- Skip nodes that have the exact same start & end and don't have any siblings
+-- We should skip those since they won't move the selection and don't have any siblings that we might be trying to get to.
+local function parent_skip_useless(node)
+  local target = node
+  while true do
+    local _target = parent_across_trees(target)
+    if _target == nil then
+      return nil
+    end
+    local has_navigable_siblings
+    if named then
+      has_navigable_siblings = node:next_named_sibling()
+        or node:prev_named_sibling()
+        or false
+    else
+      has_navigable_siblings = node:next_sibling()
+        or node:prev_sibling()
+        or false
+    end
+    if not same_range(_target, node) or has_navigable_siblings then
+      return _target
+    end
+
+    target = _target
+  end
+end
+
+---@param node TSNode
+function M.parent(node)
+  return parent_skip_useless(node)
 end
 
 return M
